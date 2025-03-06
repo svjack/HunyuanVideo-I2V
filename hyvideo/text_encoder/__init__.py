@@ -4,8 +4,14 @@ from copy import deepcopy
 
 import torch
 import torch.nn as nn
-from transformers import CLIPTextModel, CLIPTokenizer, AutoTokenizer, AutoModel, \
-     LlavaForConditionalGeneration, CLIPImageProcessor
+from transformers import (
+    CLIPTextModel,
+    CLIPTokenizer,
+    AutoTokenizer,
+    AutoModel,
+    LlavaForConditionalGeneration,
+    CLIPImageProcessor,
+)
 from transformers.utils import ModelOutput
 
 from ..constants import TEXT_ENCODER_PATH, TOKENIZER_PATH
@@ -291,8 +297,8 @@ class TextEncoder(nn.Module):
         return_texts=False,
         data_type="image",
         semantic_images=None,
+        image_embed_interleave=2,
         device=None,
-        image_embed_interleave=2
     ):
         """
         Args:
@@ -306,6 +312,8 @@ class TextEncoder(nn.Module):
                 When self.produce is False, do_sample is set to True by default.
             hidden_state_skip_layer (int): Number of hidden states to hidden_state_skip_layer. 0 means the last layer.
                 If None, self.output_key will be used. Defaults to None.
+            hidden_state_skip_layer (PIL.Image): The reference images for i2v models.
+            image_embed_interleave (int): The number of times to interleave the image and text embeddings. Defaults to 2.
             return_texts (bool): Whether to return the decoded texts. Defaults to False.
         """
         device = self.model.device if device is None else device
@@ -316,7 +324,9 @@ class TextEncoder(nn.Module):
         do_sample = use_default(do_sample, not self.reproduce)
         if not self.i2v_mode:
             attention_mask = (
-                batch_encoding["attention_mask"].to(device) if use_attention_mask else None
+                batch_encoding["attention_mask"].to(device)
+                if use_attention_mask
+                else None
             )
             outputs = self.model(
                 input_ids=batch_encoding["input_ids"].to(device),
@@ -325,7 +335,9 @@ class TextEncoder(nn.Module):
                 or hidden_state_skip_layer is not None,
             )
             if hidden_state_skip_layer is not None:
-                last_hidden_state = outputs.hidden_states[-(hidden_state_skip_layer + 1)]
+                last_hidden_state = outputs.hidden_states[
+                    -(hidden_state_skip_layer + 1)
+                ]
                 # Real last hidden state already has layer norm applied. So here we only apply it
                 # for intermediate layers.
                 if hidden_state_skip_layer > 0 and self.apply_final_norm:
@@ -353,19 +365,25 @@ class TextEncoder(nn.Module):
                 )
             return TextEncoderModelOutput(last_hidden_state, attention_mask)
         else:
-            image_outputs = self.processor(semantic_images, return_tensors='pt')["pixel_values"].to(device)
-
+            image_outputs = self.processor(semantic_images, return_tensors="pt")[
+                "pixel_values"
+            ].to(device)
             attention_mask = (
-                batch_encoding["attention_mask"].to(device) if use_attention_mask else None
+                batch_encoding["attention_mask"].to(device)
+                if use_attention_mask
+                else None
             )
             outputs = self.model(
                 input_ids=batch_encoding["input_ids"].to(device),
                 attention_mask=attention_mask,
-                output_hidden_states=output_hidden_states or hidden_state_skip_layer is not None,
-                pixel_values=image_outputs
+                output_hidden_states=output_hidden_states
+                or hidden_state_skip_layer is not None,
+                pixel_values=image_outputs,
             )
             if hidden_state_skip_layer is not None:
-                last_hidden_state = outputs.hidden_states[-(hidden_state_skip_layer + 1)]
+                last_hidden_state = outputs.hidden_states[
+                    -(hidden_state_skip_layer + 1)
+                ]
                 # Real last hidden state already has layer norm applied. So here we only apply it
                 # for intermediate layers.
                 if hidden_state_skip_layer > 0 and self.apply_final_norm:
@@ -373,25 +391,54 @@ class TextEncoder(nn.Module):
             else:
                 last_hidden_state = outputs[self.output_key]
             if self.use_template:
-                if data_type == 'image':
-                    crop_start = self.prompt_template.get("crop_start", -1)
-                    crop_end = self.prompt_template_video.get('assistant_emb_start', -1)
-                elif data_type == 'video':
+                if data_type == "video":
                     crop_start = self.prompt_template_video.get("crop_start", -1)
-                    text_crop_start = crop_start - 1 + self.prompt_template_video.get("image_emb_len", 576)
-                    image_crop_start = self.prompt_template_video.get("image_emb_start", 5)
-                    image_crop_end = self.prompt_template_video.get('image_emb_end', 581)
+                    text_crop_start = (
+                        crop_start
+                        - 1
+                        + self.prompt_template_video.get("image_emb_len", 576)
+                    )
+                    image_crop_start = self.prompt_template_video.get(
+                        "image_emb_start", 5
+                    )
+                    image_crop_end = self.prompt_template_video.get(
+                        "image_emb_end", 581
+                    )
                     batch_indices, last_double_return_token_indices = torch.where(
-                        batch_encoding["input_ids"] == self.prompt_template_video.get('double_return_token_id', 271))
-                    last_double_return_token_indices = last_double_return_token_indices.reshape(
-                        batch_encoding["input_ids"].shape[0], -1)[:, -1]
-                    batch_indices = batch_indices.reshape(batch_encoding["input_ids"].shape[0], -1)[:, -1]
-                    assistant_crop_start = last_double_return_token_indices - 1 + self.prompt_template_video.get(
-                        "image_emb_len", 576) - 4
-                    assistant_crop_end = last_double_return_token_indices - 1 + self.prompt_template_video.get(
-                        "image_emb_len", 576)
-
-                    attention_mask_assistant_crop_start = last_double_return_token_indices - 4
+                        batch_encoding["input_ids"]
+                        == self.prompt_template_video.get("double_return_token_id", 271)
+                    )
+                    if last_double_return_token_indices.shape[0] == 3:
+                        # in case the prompt is too long
+                        last_double_return_token_indices = torch.cat(
+                            (
+                                last_double_return_token_indices,
+                                torch.tensor([batch_encoding["input_ids"].shape[-1]]),
+                            )
+                        )
+                        batch_indices = torch.cat((batch_indices, torch.tensor([0])))
+                    last_double_return_token_indices = (
+                        last_double_return_token_indices.reshape(
+                            batch_encoding["input_ids"].shape[0], -1
+                        )[:, -1]
+                    )
+                    batch_indices = batch_indices.reshape(
+                        batch_encoding["input_ids"].shape[0], -1
+                    )[:, -1]
+                    assistant_crop_start = (
+                        last_double_return_token_indices
+                        - 1
+                        + self.prompt_template_video.get("image_emb_len", 576)
+                        - 4
+                    )
+                    assistant_crop_end = (
+                        last_double_return_token_indices
+                        - 1
+                        + self.prompt_template_video.get("image_emb_len", 576)
+                    )
+                    attention_mask_assistant_crop_start = (
+                        last_double_return_token_indices - 4
+                    )
                     attention_mask_assistant_crop_end = last_double_return_token_indices
                 else:
                     raise ValueError(f"Unsupported data type: {data_type}")
@@ -401,17 +448,43 @@ class TextEncoder(nn.Module):
                 image_last_hidden_state = []
                 image_attention_mask = []
                 for i in range(batch_encoding["input_ids"].shape[0]):
-                    text_last_hidden_state.append(torch.cat(
-                        [last_hidden_state[i, text_crop_start:assistant_crop_start[i].item()],
-                         last_hidden_state[i, assistant_crop_end[i].item():]]))
-                    text_attention_mask.append(torch.cat(
-                        [attention_mask[i, crop_start:attention_mask_assistant_crop_start[i].item()], attention_mask[i,
-                                                                                                      attention_mask_assistant_crop_end[
-                                                                                                          i].item():]]) if use_attention_mask else None)
-                    image_last_hidden_state.append(last_hidden_state[i, image_crop_start:image_crop_end])
+                    text_last_hidden_state.append(
+                        torch.cat(
+                            [
+                                last_hidden_state[
+                                    i, text_crop_start : assistant_crop_start[i].item()
+                                ],
+                                last_hidden_state[i, assistant_crop_end[i].item() :],
+                            ]
+                        )
+                    )
+                    text_attention_mask.append(
+                        torch.cat(
+                            [
+                                attention_mask[
+                                    i,
+                                    crop_start : attention_mask_assistant_crop_start[
+                                        i
+                                    ].item(),
+                                ],
+                                attention_mask[
+                                    i, attention_mask_assistant_crop_end[i].item() :
+                                ],
+                            ]
+                        )
+                        if use_attention_mask
+                        else None
+                    )
+                    image_last_hidden_state.append(
+                        last_hidden_state[i, image_crop_start:image_crop_end]
+                    )
                     image_attention_mask.append(
-                        torch.ones(image_last_hidden_state[-1].shape[0]).to(last_hidden_state.device).to(
-                            attention_mask.dtype) if use_attention_mask else None)
+                        torch.ones(image_last_hidden_state[-1].shape[0])
+                        .to(last_hidden_state.device)
+                        .to(attention_mask.dtype)
+                        if use_attention_mask
+                        else None
+                    )
 
                 text_last_hidden_state = torch.stack(text_last_hidden_state)
                 text_attention_mask = torch.stack(text_attention_mask)
@@ -419,17 +492,31 @@ class TextEncoder(nn.Module):
                 image_attention_mask = torch.stack(image_attention_mask)
 
                 if semantic_images is not None and 0 < image_embed_interleave < 6:
-                    image_last_hidden_state = image_last_hidden_state[:, ::image_embed_interleave, :]
-                    image_attention_mask = image_attention_mask[:, ::image_embed_interleave]
+                    image_last_hidden_state = image_last_hidden_state[
+                        :, ::image_embed_interleave, :
+                    ]
+                    image_attention_mask = image_attention_mask[
+                        :, ::image_embed_interleave
+                    ]
 
-                assert text_last_hidden_state.shape[0] == text_attention_mask.shape[0] and \
-                       image_last_hidden_state.shape[0] == image_attention_mask.shape[0]
+                assert (
+                    text_last_hidden_state.shape[0] == text_attention_mask.shape[0]
+                    and image_last_hidden_state.shape[0]
+                    == image_attention_mask.shape[0]
+                )
 
-                last_hidden_state = torch.cat([image_last_hidden_state, text_last_hidden_state], dim=1)
-                attention_mask = torch.cat([image_attention_mask, text_attention_mask], dim=1)
+                last_hidden_state = torch.cat(
+                    [image_last_hidden_state, text_last_hidden_state], dim=1
+                )
+                attention_mask = torch.cat(
+                    [image_attention_mask, text_attention_mask], dim=1
+                )
             if output_hidden_states:
-                return TextEncoderModelOutput(last_hidden_state, attention_mask,
-                                              hidden_states_list=outputs.hidden_states)
+                return TextEncoderModelOutput(
+                    last_hidden_state,
+                    attention_mask,
+                    hidden_states_list=outputs.hidden_states,
+                )
             return TextEncoderModelOutput(last_hidden_state, attention_mask)
 
     def forward(

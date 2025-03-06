@@ -3,8 +3,14 @@ from safetensors.torch import load_file
 
 
 # load kohya lora for diffusers pipeline
-def load_lora_for_pipeline(pipeline, lora_path, LORA_PREFIX_TRANSFORMER="", LORA_PREFIX_TEXT_ENCODER="", alpha=1.0,
-                           device=0):
+def load_lora_for_pipeline(
+    pipeline,
+    lora_path,
+    LORA_PREFIX_TRANSFORMER="",
+    LORA_PREFIX_TEXT_ENCODER="",
+    alpha=1.0,
+    device=0,
+):
     # load LoRA weight from .safetensors
     state_dict = load_file(lora_path, device=device)
 
@@ -20,10 +26,14 @@ def load_lora_for_pipeline(pipeline, lora_path, LORA_PREFIX_TRANSFORMER="", LORA
             continue
 
         if "text" in key:
-            layer_infos = key.split(".")[0].split(LORA_PREFIX_TEXT_ENCODER + "_")[-1].split("_")
+            layer_infos = (
+                key.split(".")[0].split(LORA_PREFIX_TEXT_ENCODER + "_")[-1].split("_")
+            )
             curr_layer = pipeline.text_encoder
         else:
-            layer_infos = key.split(".")[0].split(LORA_PREFIX_TRANSFORMER + "_")[-1].split("_")
+            layer_infos = (
+                key.split(".")[0].split(LORA_PREFIX_TRANSFORMER + "_")[-1].split("_")
+            )
             curr_layer = pipeline.transformer
 
         # find the target layer
@@ -52,8 +62,12 @@ def load_lora_for_pipeline(pipeline, lora_path, LORA_PREFIX_TRANSFORMER="", LORA
         # update weight
         if len(state_dict[pair_keys[0]].shape) == 4:
             weight_up = state_dict[pair_keys[0]].squeeze(3).squeeze(2).to(torch.float32)
-            weight_down = state_dict[pair_keys[1]].squeeze(3).squeeze(2).to(torch.float32)
-            curr_layer.weight.data += alpha * torch.mm(weight_up, weight_down).unsqueeze(2).unsqueeze(3)
+            weight_down = (
+                state_dict[pair_keys[1]].squeeze(3).squeeze(2).to(torch.float32)
+            )
+            curr_layer.weight.data += alpha * torch.mm(
+                weight_up, weight_down
+            ).unsqueeze(2).unsqueeze(3)
         else:
             weight_up = state_dict[pair_keys[0]].to(torch.float32)
             weight_down = state_dict[pair_keys[1]].to(torch.float32)

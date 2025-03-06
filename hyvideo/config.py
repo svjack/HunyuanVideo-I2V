@@ -504,15 +504,15 @@ def add_i2v_args(parser: argparse.ArgumentParser):
     group = parser.add_argument_group(title="I2V args")
 
     group.add_argument(
-        "--i2v-mode", action="store_true", help="Is use i2v mode."
+        "--i2v-mode", action="store_true", help="Whether to open i2v mode."
     )
 
     group.add_argument(
-        "--i2v-resolution", type=str, default=None, choices=["720p", "540p", "360p"], help="Resolution for i2v inference."
+        "--i2v-resolution", type=str, default="720p", choices=["720p", "540p", "360p"], help="Resolution for i2v inference."
     )
 
     group.add_argument(
-        "--i2v-image-path", type=str, default=None, help="Image path for i2v inference."
+        "--i2v-image-path", type=str, default="./assets/demo/i2v/imgs/0.png", help="Image path for i2v inference."
     )
 
     return parser
@@ -522,7 +522,7 @@ def add_lora_args(parser: argparse.ArgumentParser):
     group = parser.add_argument_group(title="lora args")
 
     group.add_argument(
-        "--use-lora", action="store_true", help="Is use lora model."
+        "--use-lora", action="store_true", help="Whether to open lora mode."
     )
 
     group.add_argument(
@@ -530,7 +530,7 @@ def add_lora_args(parser: argparse.ArgumentParser):
     )
 
     group.add_argument(
-        "--lora-scale", type=float, default=1.0, help="Scale for lora model."
+        "--lora-scale", type=float, default=1.0, help="Fusion scale for lora model."
     )
 
     group.add_argument(

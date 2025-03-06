@@ -4,21 +4,15 @@ import io
 import torch
 import numpy as np
 import json
-import urllib.request
-
-from torch.utils.data import Dataset
-from torch.utils.data import ConcatDataset
-
 import traceback
 import time
-import requests
-
 import pyarrow as pa
-import pandas as pd
+
+from torch.utils.data import Dataset
 
 class VideoDataset(Dataset):
     def __init__(self,
-                 data_jsons_path,
+                 data_jsons_path: str,
                  sample_n_frames: int = 129,
                  sample_stride: int = 1,
                  text_encoder=None,
@@ -27,6 +21,18 @@ class VideoDataset(Dataset):
                  args=None,
                  logger=None,
                  ) -> None:
+        """_summary_
+
+        Args:
+            data_jsons_path (str): input data json path
+            sample_n_frames (int, optional): training video length. Defaults to 129.
+            sample_stride (int, optional): video frame sample stride. Defaults to 1 (No strid).
+            text_encoder (_type_, optional): text encoder to tokenize. Defaults to None.
+            text_encoder_2 (_type_, optional): second text encoder to tokenize. Defaults to None.
+            uncond_p (float, optional): text uncondition prod. Defaults to 0.0.
+            args (_type_, optional): args. Defaults to None.
+            logger (_type_, optional): logger. Defaults to None.
+        """
         self.args = args
         self.sample_n_frames = sample_n_frames
         self.sample_stride = sample_stride
@@ -169,70 +175,10 @@ class VideoDataset(Dataset):
 
         raise RuntimeError('Too many bad data.')
 
-
-class VideoConcatDataset:
-    def __init__(self,
-                 args,
-                 data_jsons_path,
-                 sample_n_frames: int = 129,
-                 sample_stride: int = 1,
-                 text_encoder=None,
-                 text_encoder_2=None,
-                 uncond_p=0.0,
-                 logger=None,
-                 ) -> None:
-        self.args = args
-
-        if logger is None: from loguru import logger
-        self.logger = logger
-
-        s_time = time.time()
-        self.datasets = []
-        self.table = []
-        total_length = 0
-
-        dataset = VideoDataset(
-            data_jsons_path=data_jsons_path,
-            sample_stride=sample_stride,
-            sample_n_frames=sample_n_frames,
-            text_encoder=text_encoder,
-            text_encoder_2=text_encoder_2,
-            uncond_p=uncond_p,
-            args=args,
-            logger=logger,
-        )
-        self.datasets.append(dataset)
-        self.table.append(dataset.table)
-        total_length += len(dataset)
-
-        self.table = pa.concat_tables(self.table)
-        logger.info(f'Data load total cost time: {(time.time() - s_time)}s')
-        logger.info(f'Total data length: {total_length}')
-        self.total_length = total_length
-        self.concat_dataset = ConcatDataset(self.datasets)
-
-    def __len__(self):
-        return len(self.concat_dataset)
-
-    def __getitem__(self, item):
-        return self.concat_dataset[item]
-
-    def get_data_info(self, index):
-        latent_shape = self.table['latent_shape'][index].as_py()
-        assert isinstance(latent_shape, list), "latent_shape must be list"
-        num_frames = latent_shape[-3]
-        height = latent_shape[-2]
-        width = latent_shape[-1]
-        num_frames = (num_frames - 1) * 4 + 1
-
-        return {'height': height,
-                'width': width,
-                'num_frames': num_frames}
-
 if __name__ == "__main__":
 
     data_jsons_path = "test_path"
-    dataset = VideoArrowConcatDataset(args=None,
+    dataset = VideoDataset(args=None,
                                       data_jsons_path=data_jsons_path)
 
     print(dataset.__getitem__(0))

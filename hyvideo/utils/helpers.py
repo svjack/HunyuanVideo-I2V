@@ -12,10 +12,12 @@ import deepspeed
 import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter
 
+
 def all_gather_sum(running_value, device):
     value = torch.tensor(running_value, device=device)
     dist.all_reduce(value, op=dist.ReduceOp.SUM)
     return value.item()
+
 
 class EventsMonitor(object):
     def __init__(self, events_root, rank):
@@ -30,6 +32,7 @@ class EventsMonitor(object):
             name, val, count = event
             if self.rank == 0:
                 self.writer.add_scalar(name, val, global_step=count)
+
 
 def profiler_context(enable, exp_dir, worker_name):
     if enable:
@@ -46,11 +49,14 @@ def profiler_context(enable, exp_dir, worker_name):
                 repeat=2,
             ),
             profile_memory=True,
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(exp_dir, worker_name=worker_name)
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                exp_dir, worker_name=worker_name
+            ),
         )
     else:
         # return empty python context manager
         return contextlib.nullcontext()
+
 
 def set_reproducibility(enable, global_seed=None):
     if enable:
@@ -66,6 +72,7 @@ def set_reproducibility(enable, global_seed=None):
 
     # LSTM and RNN networks are not deterministic
 
+
 def set_manual_seed(global_seed):
     # Seed the RNG for Python
     random.seed(global_seed)
@@ -76,6 +83,7 @@ def set_manual_seed(global_seed):
     # Seed cuda
     torch.cuda.manual_seed_all(global_seed)
 
+
 def _ntuple(n):
     def parse(x):
         if isinstance(x, collections.abc.Iterable) and not isinstance(x, str):
@@ -84,6 +92,7 @@ def _ntuple(n):
                 x = tuple(repeat(x[0], n))
             return x
         return tuple(repeat(x, n))
+
     return parse
 
 

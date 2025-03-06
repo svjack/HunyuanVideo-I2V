@@ -23,19 +23,34 @@ from einops import rearrange
 
 from hyvideo.config import parse_args
 from hyvideo.constants import C_SCALE, PROMPT_TEMPLATE
-from hyvideo.dataset.video_loader import VideoConcatDataset
+from hyvideo.dataset.video_loader import VideoDataset
 from hyvideo.diffusion import load_denoiser
 from hyvideo.ds_config import get_deepspeed_config
 from hyvideo.utils.train_utils import (
-    prepare_model_inputs, load_state_dict, set_worker_seed_builder, get_module_kohya_state_dict, load_lora
+    prepare_model_inputs,
+    load_state_dict,
+    set_worker_seed_builder,
+    get_module_kohya_state_dict,
+    load_lora,
 )
 from hyvideo.modules import load_model
 from hyvideo.text_encoder import TextEncoder
 from hyvideo.utils.file_utils import (
-    safe_dir, get_experiment_max_number, empty_logger, dump_args, dump_codes, resolve_resume_path, logger_filter,
+    safe_dir,
+    get_experiment_max_number,
+    empty_logger,
+    dump_args,
+    dump_codes,
+    resolve_resume_path,
+    logger_filter,
 )
 from hyvideo.utils.helpers import (
-    as_tuple, set_manual_seed, set_reproducibility, profiler_context, all_gather_sum, EventsMonitor
+    as_tuple,
+    set_manual_seed,
+    set_reproducibility,
+    profiler_context,
+    all_gather_sum,
+    EventsMonitor,
 )
 from hyvideo.vae import load_vae
 from hyvideo.constants import PRECISION_TO_TYPE
@@ -43,12 +58,13 @@ from hyvideo.constants import PRECISION_TO_TYPE
 from peft import LoraConfig, get_peft_model
 from safetensors.torch import save_file
 
+
 def setup_distributed_training(args):
     deepspeed.init_distributed()
 
     # Treat micro/global batch size as tuples for compatibility with mix-scale training.
     world_size = dist.get_world_size()
-    if args.data_type == 'video' and args.video_micro_batch_size is None:
+    if args.data_type == "video" and args.video_micro_batch_size is None:
         # When data_type is video and video_micro_batch_size is None, we set the value from micro_batch_size
         args.video_micro_batch_size = args.micro_batch_size
 
@@ -56,20 +72,25 @@ def setup_distributed_training(args):
     video_micro_batch_size = as_tuple(args.video_micro_batch_size)
     grad_accu_steps = args.gradient_accumulation_steps
     global_batch_size = as_tuple(args.global_batch_size)
-    if 'video' in args.data_type:
+    if "video" in args.data_type:
         refer_micro_batch_size = video_micro_batch_size
     else:
         refer_micro_batch_size = micro_batch_size
 
     if global_batch_size[0] is None:
         # Note: Model/Pipeline parallel is not supported yet. So, data-parallel-size equals to world-size.
-        global_batch_size = tuple([mbs_i * world_size * grad_accu_steps for mbs_i in refer_micro_batch_size])
+        global_batch_size = tuple(
+            [mbs_i * world_size * grad_accu_steps for mbs_i in refer_micro_batch_size]
+        )
     else:
-        assert global_batch_size == [mbs_i * world_size * grad_accu_steps for mbs_i in refer_micro_batch_size], \
-            f"Global batch size should be divisible by world size, but got {global_batch_size} and {world_size}."
+        assert global_batch_size == [
+            mbs_i * world_size * grad_accu_steps for mbs_i in refer_micro_batch_size
+        ], f"Global batch size should be divisible by world size, but got {global_batch_size} and {world_size}."
 
     rank = dist.get_rank()  # Rank of the current process in the cluster.
-    device = rank % torch.cuda.device_count()  # Device of the current process in current node.
+    device = (
+        rank % torch.cuda.device_count()
+    )  # Device of the current process in current node.
     # Set current device for the current process, otherwise dist.barrier() will occupy more memory in rank 0.
     torch.cuda.set_device(device)
 
@@ -77,7 +98,15 @@ def setup_distributed_training(args):
     set_manual_seed(args.global_seed)
     set_reproducibility(args.reproduce, args.global_seed)
 
-    return rank, device, world_size, micro_batch_size, video_micro_batch_size, grad_accu_steps, global_batch_size
+    return (
+        rank,
+        device,
+        world_size,
+        micro_batch_size,
+        video_micro_batch_size,
+        grad_accu_steps,
+        global_batch_size,
+    )
 
 
 def setup_experiment_directory(args, rank):
@@ -86,8 +115,12 @@ def setup_experiment_directory(args, rank):
     # Automatically increase the experiment number.
     existed_experiments = list(output_dir.glob("*"))
     experiment_index = get_experiment_max_number(existed_experiments) + 1
-    model_name = args.model.replace('/', '').replace('-', '_')  # Replace '/' to avoid sub-directory.
-    experiment_dir = output_dir / f"{experiment_index:04d}_{model_name}_{args.task_flag}"
+    model_name = args.model.replace("/", "").replace(
+        "-", "_"
+    )  # Replace '/' to avoid sub-directory.
+    experiment_dir = (
+        output_dir / f"{experiment_index:04d}_{model_name}_{args.task_flag}"
+    )
     ckpt_dir = experiment_dir / "checkpoints"
 
     # Makesure all processes have the same experiment directory.
@@ -95,10 +128,25 @@ def setup_experiment_directory(args, rank):
 
     if rank == 0:
         from loguru import logger
-        logger.add(experiment_dir / "train.log", level="DEBUG", colorize=False, backtrace=True,
-                   diagnose=True, encoding="utf-8", filter=logger_filter("train"))
-        logger.add(experiment_dir / "val.log", level="DEBUG", colorize=False, backtrace=True,
-                   diagnose=True, encoding="utf-8", filter=logger_filter("val"))
+
+        logger.add(
+            experiment_dir / "train.log",
+            level="DEBUG",
+            colorize=False,
+            backtrace=True,
+            diagnose=True,
+            encoding="utf-8",
+            filter=logger_filter("train"),
+        )
+        logger.add(
+            experiment_dir / "val.log",
+            level="DEBUG",
+            colorize=False,
+            backtrace=True,
+            diagnose=True,
+            encoding="utf-8",
+            filter=logger_filter("val"),
+        )
         train_logger = logger.bind(name="train")
         val_logger = logger.bind(name="val")
 
@@ -133,10 +181,16 @@ class ScalarStates:
     current_run_update_steps: int = 0  # Update steps in current run
     consumed_samples_total: int = 0  # Accumulated consumed samples
     consumed_video_samples_total: int = 0  # Accumulated consumed video samples
-    consumed_samples_per_dp: int = 0  # Accumulated consumed samples per data-parallel group
-    consumed_video_samples_per_dp: int = 0  # Accumulated consumed video samples per data-parallel group
+    consumed_samples_per_dp: int = (
+        0  # Accumulated consumed samples per data-parallel group
+    )
+    consumed_video_samples_per_dp: int = (
+        0  # Accumulated consumed video samples per data-parallel group
+    )
     consumed_tokens_total: int = 0  # Accumulated consumed tokens
-    consumed_computations_attn: int = 0  # Accumulated consumed computations of attention + mlp
+    consumed_computations_attn: int = (
+        0  # Accumulated consumed computations of attention + mlp
+    )
     consumed_computations_total: int = 0  # Accumulated consumed computations of total
 
     def add(self, **kwargs):
@@ -152,7 +206,9 @@ class CycleStates:
     running_samples: int = 0
     running_video_samples: int = 0
     running_grad_norm: float = 0
-    running_loss_dict: Dict[int, float] = field(default_factory=lambda: defaultdict(float))
+    running_loss_dict: Dict[int, float] = field(
+        default_factory=lambda: defaultdict(float)
+    )
     log_steps_dict: Dict[int, int] = field(default_factory=lambda: defaultdict(int))
 
     def add(self, **kwargs):
@@ -171,14 +227,15 @@ class CycleStates:
         self.log_steps_dict = defaultdict(int)
 
 
-def save_checkpoint(args,
-                    rank: int,
-                    logger,
-                    model_engine: DeepSpeedEngine,
-                    ema,
-                    scalar_state: ScalarStates,
-                    ckpt_dir: Path,
-                    ):
+def save_checkpoint(
+    args,
+    rank: int,
+    logger,
+    model_engine: DeepSpeedEngine,
+    ema,
+    scalar_state: ScalarStates,
+    ckpt_dir: Path,
+):
     _ = rank  # Currently not used.
 
     # gather scalar state
@@ -187,23 +244,24 @@ def save_checkpoint(args,
     torch.distributed.all_gather_object(gather_results_list, scalar_state_dict)
     gather_scalar_states = {}
     for results in gather_results_list:
-        gather_scalar_states[results['rank']] = results
+        gather_scalar_states[results["rank"]] = results
 
     client_state = {
-        'args': args,
-        'scalar_state': gather_scalar_states,
+        "args": args,
+        "scalar_state": gather_scalar_states,
     }
     if ema is not None:
-        client_state['ema'] = ema.state_dict()
-        client_state['ema_config'] = ema.config
+        client_state["ema"] = ema.state_dict()
+        client_state["ema_config"] = ema.config
 
     def try_save(_save_name):
         checkpoint_path = ckpt_dir / _save_name
         try:
-            model_engine.save_checkpoint(str(ckpt_dir),
-                                         client_state=client_state,
-                                         tag=_save_name,
-                                         )
+            model_engine.save_checkpoint(
+                str(ckpt_dir),
+                client_state=client_state,
+                tag=_save_name,
+            )
             logger.info(f"Saved checkpoint to {checkpoint_path}")
             return checkpoint_path
         except Exception as e:
@@ -220,26 +278,39 @@ def save_checkpoint(args,
 def main(args):
     # ============================= Setup ==============================
     # Setup distributed training environment and reproducibility.
-    rank, device, world_size, micro_batch_size, video_micro_batch_size, grad_accu_steps, global_batch_size = \
-        setup_distributed_training(args)
+    (
+        rank,
+        device,
+        world_size,
+        micro_batch_size,
+        video_micro_batch_size,
+        grad_accu_steps,
+        global_batch_size,
+    ) = setup_distributed_training(args)
     # Setup experiment directory
     exp_dir, ckpt_dir, logger, val_logger = setup_experiment_directory(args, rank)
     # Load deepspeed config
     deepspeed_config = get_deepspeed_config(
-        args, video_micro_batch_size[0], global_batch_size[0], args.output_dir, exp_dir.name)
+        args,
+        video_micro_batch_size[0],
+        global_batch_size[0],
+        args.output_dir,
+        exp_dir.name,
+    )
     # Log and dump the arguments and codes.
     logger.info(sys.argv)
     logger.info(str(args))
     if rank == 0:
         # Dump the arguments to a file.
-        extra_args = {'world_size': world_size, 'global_batch_size': global_batch_size}
+        extra_args = {"world_size": world_size, "global_batch_size": global_batch_size}
         dump_args(args, exp_dir / "args.json", extra_args)
         # Dump codes to the experiment directory.
-        dump_codes(exp_dir / "codes.tar.gz",
-                   root=Path(__file__).parent.parent,
-                   sub_dirs=["hymm", "jobs"],
-                   save_prefix=args.task_flag,
-                   )
+        dump_codes(
+            exp_dir / "codes.tar.gz",
+            root=Path(__file__).parent.parent,
+            sub_dirs=["hymm", "jobs"],
+            save_prefix=args.task_flag,
+        )
 
     # =========================== Build main model ===========================
     logger.info("Building model...")
@@ -257,7 +328,7 @@ def main(args):
         args,
         in_channels=in_channels,
         out_channels=out_channels,
-        factor_kwargs=factor_kwargs
+        factor_kwargs=factor_kwargs,
     )
     model = load_state_dict(args, model, logger)
 
@@ -266,24 +337,26 @@ def main(args):
             param.requires_grad_(False)
 
         target_modules = [
-        "linear",
-        "fc1",
-        "fc2",
-        "img_attn_qkv",
-        "img_attn_proj",
-        "txt_attn_qkv",
-        "txt_attn_proj",
-        "linear1",
-        "linear2",
+            "linear",
+            "fc1",
+            "fc2",
+            "img_attn_qkv",
+            "img_attn_proj",
+            "txt_attn_qkv",
+            "txt_attn_proj",
+            "linear1",
+            "linear2",
         ]
 
         lora_config = LoraConfig(
-            r=args.lora_rank, lora_alpha=args.lora_rank,
-            init_lora_weights="gaussian", target_modules=target_modules,
+            r=args.lora_rank,
+            lora_alpha=args.lora_rank,
+            init_lora_weights="gaussian",
+            target_modules=target_modules,
         )
         model = get_peft_model(model, lora_config)
 
-        if args.lora_path != '':
+        if args.lora_path != "":
             model = load_lora(model, args.lora_path, device=device)
 
     logger.info(model)
@@ -302,23 +375,27 @@ def main(args):
 
     # ========================== Initialize model_engine, optimizer =========================
     if args.warmup_num_steps > 0:
-        logger.info(f"Building scheduler with warmup_min_lr={args.warmup_min_lr}, warmup_max_lr={args.lr}, "
-                    f"warmup_num_steps={args.warmup_num_steps}.")
-        lr_scheduler = partial(lr_schedules.WarmupLR,
-                               warmup_min_lr=args.warmup_min_lr,
-                               warmup_max_lr=args.lr,
-                               warmup_num_steps=args.warmup_num_steps,
-                               )
+        logger.info(
+            f"Building scheduler with warmup_min_lr={args.warmup_min_lr}, warmup_max_lr={args.lr}, "
+            f"warmup_num_steps={args.warmup_num_steps}."
+        )
+        lr_scheduler = partial(
+            lr_schedules.WarmupLR,
+            warmup_min_lr=args.warmup_min_lr,
+            warmup_max_lr=args.lr,
+            warmup_num_steps=args.warmup_num_steps,
+        )
     else:
         lr_scheduler = None
 
     logger.info("Initializing optimizer (using deepspeed)...")
-    model_engine, opt, _, scheduler = deepspeed.initialize(args=args,
-                                                           model=model,
-                                                           model_parameters=get_trainable_params(model, args),
-                                                           config_params=deepspeed_config,
-                                                           lr_scheduler=lr_scheduler,
-                                                           )
+    model_engine, opt, _, scheduler = deepspeed.initialize(
+        args=args,
+        model=model,
+        model_parameters=get_trainable_params(model, args),
+        config_params=deepspeed_config,
+        lr_scheduler=lr_scheduler,
+    )
 
     # ====================== Build denoise scheduler ========================
     logger.info("Building denoise scheduler...")
@@ -327,43 +404,49 @@ def main(args):
     # ============================= Build extra models =========================
     # 2d/3d VAE
     vae, vae_path, s_ratio, t_ratio = load_vae(
-        args.vae, args.vae_precision, logger=logger, device=device)
+        args.vae, args.vae_precision, logger=logger, device=device
+    )
 
     # Text encoder
-    text_encoder = TextEncoder(text_encoder_type=args.text_encoder,
-                               max_length=args.text_len + (
-                                   PROMPT_TEMPLATE[args.prompt_template_video].get("crop_start", 0)
-                                   if args.prompt_template_video is not None \
-                                       else PROMPT_TEMPLATE[args.prompt_template].get("crop_start",
-                                                                                      0) if args.prompt_template is not None
-                                   else 0
-                               ),
-                               text_encoder_precision=args.text_encoder_precision,
-                               tokenizer_type=args.tokenizer,
-                               i2v_mode=args.i2v_mode,
-                               prompt_template=(
-                                   PROMPT_TEMPLATE[args.prompt_template]
-                                   if args.prompt_template is not None else None
-                               ),
-                               prompt_template_video=(
-                                   PROMPT_TEMPLATE[args.prompt_template_video]
-                                   if args.prompt_template_video is not None else None
-                               ),
-                               hidden_state_skip_layer=args.hidden_state_skip_layer,
-                               apply_final_norm=args.apply_final_norm,
-                               reproduce=args.reproduce,
-                               logger=logger,
-                               device=device,
-                               )
+    text_encoder = TextEncoder(
+        text_encoder_type=args.text_encoder,
+        max_length=args.text_len
+        + (
+            PROMPT_TEMPLATE[args.prompt_template_video].get("crop_start", 0)
+            if args.prompt_template_video is not None
+            else PROMPT_TEMPLATE[args.prompt_template].get("crop_start", 0)
+            if args.prompt_template is not None
+            else 0
+        ),
+        text_encoder_precision=args.text_encoder_precision,
+        tokenizer_type=args.tokenizer,
+        i2v_mode=args.i2v_mode,
+        prompt_template=(
+            PROMPT_TEMPLATE[args.prompt_template]
+            if args.prompt_template is not None
+            else None
+        ),
+        prompt_template_video=(
+            PROMPT_TEMPLATE[args.prompt_template_video]
+            if args.prompt_template_video is not None
+            else None
+        ),
+        hidden_state_skip_layer=args.hidden_state_skip_layer,
+        apply_final_norm=args.apply_final_norm,
+        reproduce=args.reproduce,
+        logger=logger,
+        device=device,
+    )
     if args.text_encoder_2 is not None:
-        text_encoder_2 = TextEncoder(text_encoder_type=args.text_encoder_2,
-                                     max_length=args.text_len_2,
-                                     text_encoder_precision=args.text_encoder_precision_2,
-                                     tokenizer_type=args.tokenizer_2,
-                                     reproduce=args.reproduce,
-                                     logger=logger,
-                                     device=device,
-                                     )
+        text_encoder_2 = TextEncoder(
+            text_encoder_type=args.text_encoder_2,
+            max_length=args.text_len_2,
+            text_encoder_precision=args.text_encoder_precision_2,
+            tokenizer_type=args.tokenizer_2,
+            reproduce=args.reproduce,
+            logger=logger,
+            device=device,
+        )
     else:
         text_encoder_2 = None
 
@@ -378,25 +461,40 @@ def main(args):
         autocast_enabled = True
 
     # ============================== Load dataset ==============================
-    if 'video' in args.data_type:
-        video_dataset = VideoConcatDataset(
-            args,
+    if "video" in args.data_type:
+        video_dataset = VideoDataset(
             data_jsons_path=args.data_jsons_path,
             sample_n_frames=args.sample_n_frames,
             sample_stride=args.sample_stride,
             text_encoder=text_encoder,
             text_encoder_2=text_encoder_2,
-            uncond_p=args.uncond_p
+            uncond_p=args.uncond_p,
+            args=args,
+            logger=logger,
         )
-        video_sampler = DistributedSampler(video_dataset, num_replicas=world_size, rank=rank, shuffle=True,
-                                                seed=args.global_seed, drop_last=True)
+        video_sampler = DistributedSampler(
+            video_dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=True,
+            seed=args.global_seed,
+            drop_last=True,
+        )
         video_batch_sampler = None
-        video_loader = DataLoader(video_dataset, batch_size=video_micro_batch_size[0], shuffle=False,
-                                  sampler=video_sampler, batch_sampler=video_batch_sampler,
-                                  num_workers=args.num_workers, pin_memory=True, drop_last=True,
-                                  prefetch_factor=None if args.num_workers == 0 else args.prefetch_factor,
-                                  worker_init_fn=set_worker_seed_builder(rank), persistent_workers=True)
-        num_video_samples = video_dataset.total_length
+        video_loader = DataLoader(
+            video_dataset,
+            batch_size=video_micro_batch_size[0],
+            shuffle=False,
+            sampler=video_sampler,
+            batch_sampler=video_batch_sampler,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            drop_last=True,
+            prefetch_factor=None if args.num_workers == 0 else args.prefetch_factor,
+            worker_init_fn=set_worker_seed_builder(rank),
+            persistent_workers=True,
+        )
+        num_video_samples = len(video_dataset)
     else:
         video_dataset = None
         video_loader = None
@@ -473,7 +571,9 @@ def main(args):
             logger.info(f"End of video random shuffle")
 
         logger.info(f"Beginning epoch {epoch}...")
-        with profiler_context(args.profile, exp_dir, worker_name=f"Rank_{rank}") as prof:
+        with profiler_context(
+            args.profile, exp_dir, worker_name=f"Rank_{rank}"
+        ) as prof:
             # Define cycle states, which accumulate the training information between log_steps.
             cs = CycleStates()
             start_time = time.time()
@@ -485,65 +585,111 @@ def main(args):
                     torch.distributed.broadcast(start_flag_tensor, 0, async_op=True)
 
                 # main diff
-                latents, model_kwargs, n_tokens, loader_data_type, cond_latents = prepare_model_inputs(
-                    args, batch, device, model, vae, text_encoder, text_encoder_2,
+                (
+                    latents,
+                    model_kwargs,
+                    n_tokens,
+                    loader_data_type,
+                    cond_latents,
+                ) = prepare_model_inputs(
+                    args,
+                    batch,
+                    device,
+                    model,
+                    vae,
+                    text_encoder,
+                    text_encoder_2,
                     rope_theta_rescale_factor=args.rope_theta_rescale_factor,
-                    rope_interpolation_factor=args.rope_interpolation_factor
+                    rope_interpolation_factor=args.rope_interpolation_factor,
                 )
                 cur_batch_size = latents.shape[0]
 
                 cur_anchor_size = max(args.video_size)
 
                 # A forward-backward step
-                with torch.autocast(device_type="cuda", dtype=target_dtype, enabled=autocast_enabled):
-                    _, loss_dict = denoiser.training_losses(model_engine, latents, model_kwargs, n_tokens=n_tokens,
-                                                            data_type=loader_data_type, i2v_mode=args.i2v_mode,
-                                                            cond_latents=cond_latents, args=args)
+                with torch.autocast(
+                    device_type="cuda", dtype=target_dtype, enabled=autocast_enabled
+                ):
+                    _, loss_dict = denoiser.training_losses(
+                        model_engine,
+                        latents,
+                        model_kwargs,
+                        n_tokens=n_tokens,
+                        data_type=loader_data_type,
+                        i2v_mode=args.i2v_mode,
+                        cond_latents=cond_latents,
+                        args=args,
+                    )
                 loss = loss_dict["loss"].mean()
                 model_engine.backward(loss)
 
                 # Update model parameters at the step of gradient accumulation.
-                model_engine.step(lr_kwargs={'last_batch_iteration': ss.update_steps})
+                model_engine.step(lr_kwargs={"last_batch_iteration": ss.update_steps})
 
                 # Update accumulated states
-                ss.add(train_steps=1, epoch_train_steps=1, consumed_samples_per_dp=cur_batch_size)
+                ss.add(
+                    train_steps=1,
+                    epoch_train_steps=1,
+                    consumed_samples_per_dp=cur_batch_size,
+                )
                 ss.add(consumed_video_samples_per_dp=cur_batch_size)
 
                 # We enable `is_update_step` if the current step is the gradient accumulation boundary.
                 is_update_step = ss.train_steps % grad_accu_steps == 0
                 if is_update_step:
-                    ss.add(update_steps=1, epoch_update_steps=1, current_run_update_steps=1)
+                    ss.add(
+                        update_steps=1, epoch_update_steps=1, current_run_update_steps=1
+                    )
 
                 if ss.update_steps >= args.max_training_steps:
                     # Enter stopping routine if max steps reached after this step.
                     finished = True
 
                 # Log training information:
-                cs.add(log_steps=1, running_loss=loss.item(), running_samples=cur_batch_size,
-                       running_tokens=cur_batch_size * n_tokens, running_grad_norm=0)
+                cs.add(
+                    log_steps=1,
+                    running_loss=loss.item(),
+                    running_samples=cur_batch_size,
+                    running_tokens=cur_batch_size * n_tokens,
+                    running_grad_norm=0,
+                )
                 cs.add(running_video_samples=cur_batch_size)
 
                 cs.running_loss_dict[cur_anchor_size] += loss.item()
                 cs.log_steps_dict[cur_anchor_size] += 1
                 if is_update_step and ss.update_steps % args.log_every == 0:
                     # Reduce loss history over all processes:
-                    avg_loss = all_gather_sum(cs.running_loss / cs.log_steps, device) / world_size
-                    avg_grad_norm = all_gather_sum(cs.running_grad_norm / cs.log_steps, device) / world_size
+                    avg_loss = (
+                        all_gather_sum(cs.running_loss / cs.log_steps, device)
+                        / world_size
+                    )
+                    avg_grad_norm = (
+                        all_gather_sum(cs.running_grad_norm / cs.log_steps, device)
+                        / world_size
+                    )
                     cum_samples = all_gather_sum(cs.running_samples, device)
                     cum_video_samples = all_gather_sum(cs.running_video_samples, device)
                     cum_tokens = all_gather_sum(cs.running_tokens, device)
                     # Measure training speed:
                     torch.cuda.synchronize()
                     end_time = time.time()
-                    steps_per_sec = cs.log_steps / (end_time - start_time) / grad_accu_steps
+                    steps_per_sec = (
+                        cs.log_steps / (end_time - start_time) / grad_accu_steps
+                    )
                     samples_per_sec = cum_samples / (end_time - start_time)
                     sec_per_step = (end_time - start_time) / cs.log_steps
                     ss.add(
                         consumed_samples_total=cum_samples,
                         consumed_video_samples_total=cum_video_samples,
                         consumed_tokens_total=cum_tokens,
-                        consumed_computations_attn=6 * params_count['attn+mlp'] * cum_tokens / C_SCALE,
-                        consumed_computations_total=6 * params_count['total'] * cum_tokens / C_SCALE,
+                        consumed_computations_attn=6
+                        * params_count["attn+mlp"]
+                        * cum_tokens
+                        / C_SCALE,
+                        consumed_computations_total=6
+                        * params_count["total"]
+                        * cum_tokens
+                        / C_SCALE,
                     )
                     log_events = [
                         f"Train Loss: {avg_loss:.4f}",
@@ -560,13 +706,27 @@ def main(args):
                         ("Train/Steps/train_loss", avg_loss, ss.update_steps),
                         ("Train/Steps/grad_norm", avg_grad_norm, ss.update_steps),
                         ("Train/Steps/steps_per_sec", steps_per_sec, ss.update_steps),
-                        ("Train/Steps/samples_per_sec", int(samples_per_sec), ss.update_steps),
+                        (
+                            "Train/Steps/samples_per_sec",
+                            int(samples_per_sec),
+                            ss.update_steps,
+                        ),
                         ("Train/Tokens/train_loss", avg_loss, ss.consumed_tokens_total),
-                        ("Train/ComputationsAttn/train_loss", avg_loss, ss.consumed_computations_attn),
-                        ("Train/ComputationsTotal/train_loss", avg_loss, ss.consumed_computations_total),
+                        (
+                            "Train/ComputationsAttn/train_loss",
+                            avg_loss,
+                            ss.consumed_computations_attn,
+                        ),
+                        (
+                            "Train/ComputationsTotal/train_loss",
+                            avg_loss,
+                            ss.consumed_computations_total,
+                        ),
                     ]
                     # Log the training information to the logger.
-                    logger.info(f"(step={ss.update_steps:07d}) " + ', '.join(log_events))
+                    logger.info(
+                        f"(step={ss.update_steps:07d}) " + ", ".join(log_events)
+                    )
                     if model_engine.monitor.enabled and rank == 0:
                         model_engine.monitor.write_events(summary_events)
 
@@ -575,22 +735,35 @@ def main(args):
                     start_time = time.time()
 
                 # Save checkpoint:
-                if (is_update_step and ss.update_steps % args.ckpt_every == 0) or (finished and args.final_save):
+                if (is_update_step and ss.update_steps % args.ckpt_every == 0) or (
+                    finished and args.final_save
+                ):
                     if args.use_lora:
                         if rank == 0:
-                            output_dir = os.path.join(ckpt_dir, f"global_step{ss.update_steps}")
+                            output_dir = os.path.join(
+                                ckpt_dir, f"global_step{ss.update_steps}"
+                            )
                             os.makedirs(output_dir, exist_ok=True)
 
-                            lora_kohya_state_dict = get_module_kohya_state_dict(model, "Hunyuan_video_I2V_lora", dtype=torch.bfloat16)
-                            save_file(lora_kohya_state_dict, f"{output_dir}/pytorch_lora_kohaya_weights.safetensors")
+                            lora_kohya_state_dict = get_module_kohya_state_dict(
+                                model, "Hunyuan_video_I2V_lora", dtype=torch.bfloat16
+                            )
+                            save_file(
+                                lora_kohya_state_dict,
+                                f"{output_dir}/pytorch_lora_kohaya_weights.safetensors",
+                            )
                     else:
-                        save_checkpoint(args, rank, logger, model_engine, ema, ss, ckpt_dir)
+                        save_checkpoint(
+                            args, rank, logger, model_engine, ema, ss, ckpt_dir
+                        )
 
                 if prof:
                     prof.step()
 
                 if finished:
-                    logger.info(f"Finished and breaking loop at step={ss.update_steps}.")
+                    logger.info(
+                        f"Finished and breaking loop at step={ss.update_steps}."
+                    )
                     break
 
             if finished:
@@ -603,6 +776,7 @@ def main(args):
             ss.epoch_update_steps = 0
 
     logger.info("Training Finished!")
+
 
 if __name__ == "__main__":
     main(parse_args(mode="train"))

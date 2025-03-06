@@ -534,7 +534,7 @@ class HunyuanVideoSampler(Inference):
         seed=None,
         negative_prompt=None,
         infer_steps=50,
-        guidance_scale=6,
+        guidance_scale=6.0,
         flow_shift=5.0,
         embedded_guidance_scale=None,
         batch_size=1,
@@ -555,9 +555,15 @@ class HunyuanVideoSampler(Inference):
                 video_length (int): The frame number of the output video. Default is 129.
                 seed (int or List[str]): The random seed for the generation. Default is a random integer.
                 negative_prompt (str or List[str]): The negative text prompt. Default is an empty string.
+                infer_steps (int): The number of inference steps. Default is 50.
                 guidance_scale (float): The guidance scale for the generation. Default is 6.0.
+                flow_shift (float): The flow shift for the generation. Default is 5.0.
+                embedded_guidance_scale (float): embedded guidance scale for the generation. Default is None.
+                batch_size (int): batch size for inference. Default is 1.
                 num_images_per_prompt (int): The number of images per prompt. Default is 1.
-                infer_steps (int): The number of inference steps. Default is 100.
+                i2v_mode (bool): Whether to open i2v mode. Default is False.
+                i2v_resolution (str): Resolution for i2v inference. Default is 720p.
+                i2v_image_path (str): Image path for i2v inference. Default is None.
         """
         out_dict = dict()
 
@@ -630,6 +636,8 @@ class HunyuanVideoSampler(Inference):
         # negative prompt
         if negative_prompt is None or negative_prompt == "":
             negative_prompt = self.default_negative_prompt
+        if guidance_scale == 1.0:
+            negative_prompt = ""
         if not isinstance(negative_prompt, str):
             raise TypeError(
                 f"`negative_prompt` must be a string, but got {type(negative_prompt)}"

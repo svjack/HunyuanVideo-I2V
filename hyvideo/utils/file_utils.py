@@ -20,13 +20,17 @@ CODE_SUFFIXES = {
     ".yml",  # Configuration files
 }
 
+
 def build_pretraining_data_loader():
     pass
+
 
 def logger_filter(name):
     def filter_(record):
         return record["extra"].get("name") == name
+
     return filter_
+
 
 def resolve_resume_path(resume, results_dir):
     # Detect the resume path. Support both the experiment index and the full path.
@@ -34,17 +38,21 @@ def resolve_resume_path(resume, results_dir):
         tmp_dirs = list(Path(results_dir).glob("*"))
         id2exp_dir = defaultdict(list)
         for tmp_dir in tmp_dirs:
-            part0 = tmp_dir.name.split('_')[0]
+            part0 = tmp_dir.name.split("_")[0]
             if part0.isnumeric():
                 id2exp_dir[int(part0)].append(tmp_dir)
         resume_id = int(resume)
         valid_exp_dir = id2exp_dir.get(resume_id)
         if len(valid_exp_dir) == 0:
-            raise ValueError(f"No valid experiment directories found in {results_dir} with the experiment "
-                             f"index {resume}.")
+            raise ValueError(
+                f"No valid experiment directories found in {results_dir} with the experiment "
+                f"index {resume}."
+            )
         elif len(valid_exp_dir) > 1:
-            raise ValueError(f"Multiple valid experiment directories found in {results_dir} with the experiment "
-                             f"index {resume}: {valid_exp_dir}.")
+            raise ValueError(
+                f"Multiple valid experiment directories found in {results_dir} with the experiment "
+                f"index {resume}: {valid_exp_dir}."
+            )
         resume_path = valid_exp_dir[0] / "checkpoints"
     else:
         resume_path = Path(resume)
@@ -54,7 +62,8 @@ def resolve_resume_path(resume, results_dir):
 
     return resume_path
 
-def dump_codes(save_path, root, sub_dirs=None, valid_suffixes=None, save_prefix='./'):
+
+def dump_codes(save_path, root, sub_dirs=None, valid_suffixes=None, save_prefix="./"):
     """
     Dump codes to the experiment directory.
 
@@ -72,7 +81,9 @@ def dump_codes(save_path, root, sub_dirs=None, valid_suffixes=None, save_prefix=
 
     # Force to use tar.gz suffix
     save_path = safe_file(save_path)
-    assert save_path.name.endswith('.tar.gz'), f"save_path should end with .tar.gz, got {save_path.name}."
+    assert save_path.name.endswith(
+        ".tar.gz"
+    ), f"save_path should end with .tar.gz, got {save_path.name}."
     # Make root absolute
     root = Path(root).absolute()
     # Make a tarball of the codes
@@ -81,7 +92,7 @@ def dump_codes(save_path, root, sub_dirs=None, valid_suffixes=None, save_prefix=
         if sub_dirs is None:
             sub_dirs = list(root.iterdir())
         for sub_dir in sub_dirs:
-            for file in Path(sub_dir).rglob('*'):
+            for file in Path(sub_dir).rglob("*"):
                 if file.is_file() and file.suffix in valid_suffixes:
                     # make file absolute
                     file = file.absolute()
@@ -89,14 +100,18 @@ def dump_codes(save_path, root, sub_dirs=None, valid_suffixes=None, save_prefix=
                     tar.add(file, arcname=arcname)
     return root
 
+
 def dump_args(args, save_path, extra_args=None):
     args_dict = vars(args)
     if extra_args:
-        assert isinstance(extra_args, dict), f"extra_args should be a dictionary, got {type(extra_args)}."
+        assert isinstance(
+            extra_args, dict
+        ), f"extra_args should be a dictionary, got {type(extra_args)}."
         args_dict.update(extra_args)
     # Save to file
-    with safe_file(save_path).open('w') as f:
+    with safe_file(save_path).open("w") as f:
         json.dump(args_dict, f, indent=4, sort_keys=True, ensure_ascii=False)
+
 
 def empty_logger():
     logger = logging.getLogger("hymm_empty_logger")
@@ -104,20 +119,23 @@ def empty_logger():
     logger.setLevel(logging.CRITICAL)
     return logger
 
+
 def is_valid_experiment(path):
     path = Path(path)
-    if path.is_dir() and path.name.split('_')[0].isdigit():
+    if path.is_dir() and path.name.split("_")[0].isdigit():
         return True
     return False
+
 
 def get_experiment_max_number(experiments):
     valid_experiment_numbers = []
     for exp in experiments:
         if is_valid_experiment(exp):
-            valid_experiment_numbers.append(int(Path(exp).name.split('_')[0]))
+            valid_experiment_numbers.append(int(Path(exp).name.split("_")[0]))
     if valid_experiment_numbers:
         return max(valid_experiment_numbers)
     return 0
+
 
 def safe_dir(path):
     """
@@ -147,6 +165,7 @@ def safe_file(path):
     path = Path(path)
     path.parent.mkdir(exist_ok=True, parents=True)
     return path
+
 
 def save_videos_grid(videos: torch.Tensor, path: str, rescale=False, n_rows=1, fps=24):
     """save videos by video tensor
