@@ -174,6 +174,7 @@ pip install torch==2.4.0 torchvision torchaudio
 conda install pytorch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 pytorch-cuda=12.4 -c pytorch -c nvidia
 
 # 4. Install pip dependencies
+git clone https://github.com/svjack/HunyuanVideo-I2V && cd HunyuanVideo-I2V
 python -m pip install -r requirements.txt
 
 # 5. Install flash attention v2 for acceleration (requires CUDA 11.8 or above)
