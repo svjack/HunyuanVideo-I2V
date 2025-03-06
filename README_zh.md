@@ -47,8 +47,8 @@
 
 | 特效类型       |  参考图像  | 生成视频  |
 |:---------------:|:--------------------------------:|:----------------:|
-|   头发生长      | <img src="./assets/demo/i2v_lora/imgs/hair_growth.png" width="40%"> | <video src="./assets/demo/i2v_lora/videos/hair_growth.mp4" width="100%"></video> |
-|   拥抱          | <img src="./assets/demo/i2v_lora/imgs/embrace.png" width="40%">     | <video src="assets/demo/i2v_lora/videos/embrace.mp4" width="100%"></video> |
+|   头发生长   |        <img src="./assets/demo/i2v_lora/imgs/hair_growth.png" width="40%">         |       <video src="https://github.com/user-attachments/assets/06b998ae-bbde-4c1f-96cb-a25a9197d5cb" width="100%"> </video>        |
+|     拥抱     |      <img src="./assets/demo/i2v_lora/imgs/embrace.png" width="40%">          |       <video src="https://github.com/user-attachments/assets/f8c99eb1-2a43-489a-ba02-6bd50a6dd260" width="100%" > </video>        |
 
 ## 📑 开源计划
 - HunyuanVideo-I2V（图像到视频模型）

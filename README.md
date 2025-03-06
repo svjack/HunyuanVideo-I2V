@@ -57,8 +57,10 @@ This repo contains offical PyTorch model definitions, pre-trained weights and in
 
 | I2V Lora Effect |  Reference Image | Generated Video  |
 |:---------------:|:--------------------------------:|:----------------:|
-|   Hair growth   |        <img src="./assets/demo/i2v_lora/imgs/hair_growth.png" width="40%">         |       <video src="./assets/demo/i2v_lora/videos/hair_growth.mp4" width="100%" > </video>        |
-|     Embrace     |      <img src="./assets/demo/i2v_lora/imgs/embrace.png" width="40%">          |       <video src="assets/demo/i2v_lora/videos/embrace.mp4" width="100%"> </video>        |
+|   Hair growth   |        <img src="./assets/demo/i2v_lora/imgs/hair_growth.png" width="40%">         |       <video src="https://github.com/user-attachments/assets/06b998ae-bbde-4c1f-96cb-a25a9197d5cb" width="100%"> </video>        |
+|     Embrace     |      <img src="./assets/demo/i2v_lora/imgs/embrace.png" width="40%">          |       <video src="https://github.com/user-attachments/assets/f8c99eb1-2a43-489a-ba02-6bd50a6dd260" width="100%" > </video>        |
+<!-- |   Hair growth   |        <img src="./assets/demo/i2v_lora/imgs/hair_growth.png" width="40%">         |       <video src="https://github.com/user-attachments/assets/06b998ae-bbde-4c1f-96cb-a25a9197d5cb" width="100%" poster="./assets/demo/i2v_lora/imgs/hair_growth.png"> </video>        |
+|     Embrace     |      <img src="./assets/demo/i2v_lora/imgs/embrace.png" width="40%">          |       <video src="https://github.com/user-attachments/assets/f8c99eb1-2a43-489a-ba02-6bd50a6dd260" width="100%" poster="./assets/demo/i2v_lora/imgs/hair_growth.png"> </video>        | -->
 
 <!-- ## 🧩 Community Contributions -->
 
