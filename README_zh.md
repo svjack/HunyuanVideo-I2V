@@ -251,7 +251,7 @@ pip install -r requirements.txt
 
 例如，AI 头发生长效果（触发词）：rapid_hair_growth, The hair of the characters in the video is growing rapidly. + 原始提示
 
-准备好训练视频和提示对后，参考 [这里] (hyvideo/hyvae_extract/README.md) 进行训练数据构建。
+准备好训练视频和提示对后，参考 [这里](hyvideo/hyvae_extract/README.md) 进行训练数据构建。
 
 
 ### 开始训练
