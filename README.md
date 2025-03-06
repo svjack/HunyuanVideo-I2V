@@ -287,7 +287,7 @@ Prompt description: The trigger word is written directly in the video caption. I
 
 For example, AI hair growth effect (trigger): rapid_hair_growth, The hair of the characters in the video is growing rapidly. + original prompt
 
-After having the training video and prompt pair, refer to [here] (hyvideo/hyvae_extract/README.md) for training data construction.
+After having the training video and prompt pair, refer to [here](hyvideo/hyvae_extract/README.md) for training data construction.
 
 
 ### Training
