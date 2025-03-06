@@ -158,6 +158,8 @@ We recommend CUDA versions 12.4 or 11.8 for the manual installation.
 Conda's installation instructions are available [here](https://docs.anaconda.com/free/miniconda/index.html).
 
 ```shell
+sudo apt-get update && sudo apt-get install git-lfs ffmpeg cbm
+
 # 1. Create conda environment
 conda create -n HunyuanVideo-I2V python==3.11.9
 
