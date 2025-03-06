@@ -212,6 +212,12 @@ Similar to [HunyuanVideo](https://github.com/Tencent/HunyuanVideo), HunyuanVideo
   - **Camera Angle (Optional)**: Indicate the perspective or viewpoint.
 - **Avoid Overly Detailed Prompts**: Lengthy or highly detailed prompts can lead to unnecessary transitions in the video output.
 
+For example:
+1. A man with short gray hair plays a red electric guitar.
+2. A woman sits on a wooden floor, holding a colorful bag.
+3. A bee flaps its wings. The camera movement is Zoom Out/Zoom In/Pan Right.
+4. A little boy closes his mouth, stands up, and lifts his left hand. The background is blurred.
+
 <!-- **For image-to-video models, we recommend using concise prompts to guide the model's generation process. A good prompt should include elements such as background, main subject, action, and camera angle. Overly long or excessively detailed prompts may introduce unnecessary transitions.** -->
 
 ### Using Command Line
