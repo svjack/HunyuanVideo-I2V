@@ -163,6 +163,9 @@ conda create -n HunyuanVideo-I2V python==3.11.9
 
 # 2. Activate the environment
 conda activate HunyuanVideo-I2V
+pip install ipykernel
+python -m ipykernel install --user --name HunyuanVideo-I2V --display-name "HunyuanVideo-I2V"
+pip install torch==2.4.0 torchvision torchaudio
 
 # 3. Install PyTorch and other dependencies using conda
 # For CUDA 12.4
